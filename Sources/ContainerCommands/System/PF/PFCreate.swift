@@ -16,29 +16,33 @@
 
 import ArgumentParser
 import ContainerAPIClient
+import ContainerResource
+import ContainerizationError
+import Foundation
 
 extension Application {
-    public struct SystemCommand: AsyncLoggableCommand {
-        public init() {}
+    public struct PFCreate: AsyncLoggableCommand {
         public static let configuration = CommandConfiguration(
-            commandName: "system",
-            abstract: "Manage system components",
-            subcommands: [
-                SystemDF.self,
-                SystemDNS.self,
-                SystemKernel.self,
-                SystemLogs.self,
-                SystemProperty.self,
-                SystemStart.self,
-                SystemStatus.self,
-                SystemStop.self,
-                SystemVersion.self,
-                SystemPF.self,
-            ],
-            aliases: ["s"]
+            commandName: "create",
+            abstract: "Create PF block rules for a network"
         )
+
+        @Argument(help: "Network subnet (e.g. 192.168.64.0/24)")
+        var subnet: String
+
+        @Option(name: .customLong("block-target"), help: "Destination target for block rules (default: rfc1918)")
+        var blockTarget: String = "rfc1918"
 
         @OptionGroup
         public var logOptions: Flags.Logging
+
+        public init() {}
+
+        public func run() async throws {
+            let pf = PacketFilter()
+            let ruleId = "\(self.subnet):\(self.blockTarget)"
+            try pf.createBlockRules(for: ruleId, subnet: self.subnet, target: self.blockTarget)
+            try pf.reinitialize()
+        }
     }
 }

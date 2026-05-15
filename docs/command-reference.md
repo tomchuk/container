@@ -753,7 +753,7 @@ Creates a new network with the given name.
 **Usage**
 
 ```bash
-container network create [--label <label> ...] [--subnet <subnet>] [--subnet-v6 <subnet-v6>] [--plugin <plugin>] [--option <key=value> ...] [--debug] <name>
+container network create [--internal] [--label <label> ...] [--plugin <plugin>] [--plugin-variant <variant>] [--subnet <subnet>] [--subnet-v6 <subnet-v6>] [--option <key=value> ...] [--debug] <name>
 ```
 
 **Arguments**
@@ -762,10 +762,12 @@ container network create [--label <label> ...] [--subnet <subnet>] [--subnet-v6 
 
 **Options**
 
+*   `--internal`: Restrict to host-only network (no NAT)
 *   `--label <label>`: Set metadata for a network
+*   `--plugin <plugin>`: Set the plugin to use to create this network (default: container-network-vmnet)
+*   `--plugin-variant <variant>`: Set the variant of the network plugin to use
 *   `--subnet <subnet>`: Set the IPv4 subnet for a network (CIDR format, e.g., 192.168.100.0/24)
 *   `--subnet-v6 <subnet-v6>`: Set the IPv6 prefix for a network (CIDR format, e.g., fd00:1234::/64)
-*   `--plugin <plugin>`: Network plugin to use (default: `container-network-vmnet`)
 *   `--option <key=value>`: Set a plugin-specific option; may be repeated
 
 ### `container network delete (rm)`

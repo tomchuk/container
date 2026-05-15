@@ -90,4 +90,166 @@ struct PacketFilterTest {
             try pf.reinitialize()
         }
     }
+
+    @Test
+    func testCreateAndRemoveBlockRules() async throws {
+        let fm = FileManager.default
+        let tempURL = try fm.url(
+            for: .itemReplacementDirectory,
+            in: .userDomainMask,
+            appropriateFor: .temporaryDirectory,
+            create: true
+        )
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+        let configPath = FilePath(tempURL.appendingPathComponent("pf.conf").path)
+        let tempPath = FilePath(tempURL.path)
+
+        let pf = PacketFilter(configPath: configPath, anchorsPath: tempPath)
+
+        // Start with an existing redirect rule so the anchor has some content
+        let from = try! IPAddress("203.0.113.113")
+        let domain = try! DNSName("example.com")
+        let to = try! IPAddress("127.0.0.1")
+        try pf.createRedirectRule(from: from, to: to, domain: domain)
+
+        // Create block rules for a network
+        try pf.createBlockRules(for: "testnet", subnet: "192.168.65.0/24")
+
+        let anchorPath = tempPath.appending("com.apple.container")
+        let anchorContent = try String(contentsOfFile: anchorPath.string, encoding: .utf8)
+        #expect(anchorContent.contains("#block# testnet"))
+        #expect(anchorContent.contains("block in quick from 192.168.65.0/24 to <rfc1918>"))
+        #expect(anchorContent.contains("table <rfc1918>"))
+
+        // Verify the rule can be removed by full rule-id
+        try pf.removeBlockRules(for: "testnet")
+        let afterRemove = try String(contentsOfFile: anchorPath.string, encoding: .utf8)
+        #expect(!afterRemove.contains("block in quick from 192.168"))
+    }
+
+    @Test
+    func testMultipleNetworkBlockRules() async throws {
+        let fm = FileManager.default
+        let tempURL = try fm.url(
+            for: .itemReplacementDirectory,
+            in: .userDomainMask,
+            appropriateFor: .temporaryDirectory,
+            create: true
+        )
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+        let configPath = FilePath(tempURL.appendingPathComponent("pf.conf").path)
+        let tempPath = FilePath(tempURL.path)
+
+        let pf = PacketFilter(configPath: configPath, anchorsPath: tempPath)
+
+        try pf.createBlockRules(for: "net-a", subnet: "192.168.100.0/24")
+        try pf.createBlockRules(for: "net-b", subnet: "192.168.200.0/24")
+
+        let anchorPath = tempPath.appending("com.apple.container")
+        let anchorContent = try String(contentsOfFile: anchorPath.string, encoding: .utf8)
+
+        #expect(anchorContent.contains("#block# net-a"))
+        #expect(anchorContent.contains("#block# net-b"))
+
+        // Remove one — the other should remain
+        try pf.removeBlockRules(for: "net-a")
+        let afterPartial = try String(contentsOfFile: anchorPath.string, encoding: .utf8)
+        #expect(afterPartial.contains("#block# net-b"))
+        #expect(!afterPartial.contains("#block# net-a"))
+    }
+
+    @Test
+    func testCreateBlockRulesSkipsExisting() async throws {
+        let fm = FileManager.default
+        let tempURL = try fm.url(
+            for: .itemReplacementDirectory,
+            in: .userDomainMask,
+            appropriateFor: .temporaryDirectory,
+            create: true
+        )
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+        let configPath = FilePath(tempURL.appendingPathComponent("pf.conf").path)
+        let tempPath = FilePath(tempURL.path)
+
+        let pf = PacketFilter(configPath: configPath, anchorsPath: tempPath)
+
+        try pf.createBlockRules(for: "192.168.100.0/24:rfc1918", subnet: "192.168.100.0/24")
+        try pf.createBlockRules(for: "192.168.100.0/24:rfc1918", subnet: "192.168.100.0/24") // no-op
+
+        let anchorPath = tempPath.appending("com.apple.container")
+        let anchorContent = try String(contentsOfFile: anchorPath.string, encoding: .utf8)
+        let lines = anchorContent.components(separatedBy: .newlines)
+        let matchCount = lines.filter { $0.starts(with: "#block# 192.168.100.0/24:rfc1918") }.count
+        #expect(matchCount == 1)
+
+        // Remove by the same network identifier
+        try pf.removeBlockRules(for: "192.168.100.0/24:rfc1918")
+    }
+
+    @Test
+    func testScanBlockRules() async throws {
+        let fm = FileManager.default
+        let tempURL = try fm.url(
+            for: .itemReplacementDirectory,
+            in: .userDomainMask,
+            appropriateFor: .temporaryDirectory,
+            create: true
+        )
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+        let configPath = FilePath(tempURL.appendingPathComponent("pf.conf").path)
+        let tempPath = FilePath(tempURL.path)
+
+        let pf = PacketFilter(configPath: configPath, anchorsPath: tempPath)
+
+        try pf.createBlockRules(for: "net-a", subnet: "192.168.100.0/24")
+        try pf.createBlockRules(for: "net-b", subnet: "192.168.200.0/24")
+
+        let rules = pf.scanBlockRules(networkIds: [])
+        #expect(rules.count == 2)
+
+        let netARule = rules.first { $0.source == "192.168.100.0/24" }
+        #expect(netARule?.destination == "rfc1918")
+
+        let netBRule = rules.first { $0.source == "192.168.200.0/24" }
+        #expect(netBRule?.destination == "rfc1918")
+    }
+
+    @Test
+    func testMultipleTargetsPerSubnet() async throws {
+        let fm = FileManager.default
+        let tempURL = try fm.url(
+            for: .itemReplacementDirectory,
+            in: .userDomainMask,
+            appropriateFor: .temporaryDirectory,
+            create: true
+        )
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+        let configPath = FilePath(tempURL.appendingPathComponent("pf.conf").path)
+        let tempPath = FilePath(tempURL.path)
+
+        let pf = PacketFilter(configPath: configPath, anchorsPath: tempPath)
+
+        try pf.createBlockRules(for: "192.168.64.0/24:1.1.1.1", subnet: "192.168.64.0/24", target: "1.1.1.1")
+        try pf.createBlockRules(for: "192.168.64.0/24:8.8.8.8", subnet: "192.168.64.0/24", target: "8.8.8.8")
+
+        let anchorPath = tempPath.appending("com.apple.container")
+        let anchorContent = try String(contentsOfFile: anchorPath.string, encoding: .utf8)
+        #expect(anchorContent.contains("#block# 192.168.64.0/24:1.1.1.1"))
+        #expect(anchorContent.contains("#block# 192.168.64.0/24:8.8.8.8"))
+
+        let rules = pf.scanBlockRules(networkIds: [])
+        #expect(rules.count == 2)
+        #expect(rules.contains { $0.destination == "1.1.1.1" })
+        #expect(rules.contains { $0.destination == "8.8.8.8" })
+
+        // Deleting one target leaves the other
+        try pf.removeBlockRules(for: "192.168.64.0/24:1.1.1.1")
+        let afterRemove = try String(contentsOfFile: anchorPath.string, encoding: .utf8)
+        #expect(afterRemove.contains("#block# 192.168.64.0/24:8.8.8.8"))
+        #expect(!afterRemove.contains("#block# 192.168.64.0/24:1.1.1.1"))
+
+        // Deleting all rules for subnet (no target specified)
+        try pf.removeBlockRules(for: "192.168.64.0/24")
+        #expect(!fm.fileExists(atPath: anchorPath.string))
+    }
 }

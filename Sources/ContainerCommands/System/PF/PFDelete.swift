@@ -16,29 +16,34 @@
 
 import ArgumentParser
 import ContainerAPIClient
+import ContainerResource
+import ContainerizationError
+import Foundation
 
 extension Application {
-    public struct SystemCommand: AsyncLoggableCommand {
-        public init() {}
+    public struct PFDelete: AsyncLoggableCommand {
         public static let configuration = CommandConfiguration(
-            commandName: "system",
-            abstract: "Manage system components",
-            subcommands: [
-                SystemDF.self,
-                SystemDNS.self,
-                SystemKernel.self,
-                SystemLogs.self,
-                SystemProperty.self,
-                SystemStart.self,
-                SystemStatus.self,
-                SystemStop.self,
-                SystemVersion.self,
-                SystemPF.self,
-            ],
-            aliases: ["s"]
+            commandName: "delete",
+            abstract: "Delete PF block rules for a network",
+            aliases: ["rm"]
         )
+
+        @Argument(help: "Network subnet (e.g. 192.168.64.0/24)")
+        var subnet: String
+
+        @Option(name: .customLong("block-target"), help: "Destination target to remove (default: all)")
+        var blockTarget: String?
 
         @OptionGroup
         public var logOptions: Flags.Logging
+
+        public init() {}
+
+        public func run() async throws {
+            let pf = PacketFilter()
+            let ruleId = self.blockTarget.map { "\(self.subnet):\($0)" } ?? self.subnet
+            try pf.removeBlockRules(for: ruleId, subnet: self.subnet)
+            try pf.reinitialize()
+        }
     }
 }

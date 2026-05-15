@@ -73,9 +73,6 @@ extension Application {
                         return true
                     }
 
-                // If one of the networks requested isn't present lets throw. We don't need to do
-                // this for --all as --all should be perfectly usable with no networks to remove,
-                // otherwise it'd be quite clunky.
                 if networks.count != uniqueNetworkNames.count {
                     let missing = uniqueNetworkNames.filter { id in
                         !networks.contains { n in
@@ -95,9 +92,8 @@ extension Application {
                 for network in networks {
                     group.addTask {
                         do {
-                            // Delete atomically disables the IP allocator, then deletes
-                            // the allocator. The disable fails if any IPs are still in use.
                             try await networkClient.delete(id: network.id)
+
                             print(network.id)
                             return nil
                         } catch {
