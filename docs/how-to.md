@@ -355,27 +355,29 @@ container network delete foo
 
 Networks support both IPv4 and IPv6. When creating a network without explicit subnet options, the system uses default values if configured via system properties (see below), or automatically allocates subnets. The system validates that custom subnets don't overlap with existing networks.
 
-## Block a network's access to private addresses
+## Block a network's access
 
-You can configure a network to block all traffic from its containers to RFC1918 (private) IP ranges. This allows the container to reach the public internet while preventing it from accessing your local network — useful for scenarios where you want internet access but not LAN access.
+You can configure a container network to block traffic from its containers to manually defined destinations, or the predefined RFC1918 private range. This allows the container to reach the public internet while preventing it from accessing your local network or specific resources — useful for scenarios where you want internet access but not LAN access.
 
-To apply this to a network, use the `--block-private-networks` flag when creating the network:
+To apply this to a network, use the `container system pf create <subnet> `
 
+E.g.
 ```bash
-container network create internet-only --block-private-networks
+container system pf create 192.168.64.0/24 --block-target 8.8.8.8/32
 ```
 
 After creating the network, any containers attached to it will be able to reach external hosts but will not be able to reach internal network addresses:
 
 ```bash
 # This will work (public internet)
-container run --rm --network internet-only alpine curl http://example.com
+container run --rm alpine ping -c 5 8.8.4.4
 
-# This will be blocked (private IP)
-container run --rm --network internet-only alpine curl http://192.168.1.1
+# This will be blocked (by the pf rule)
+container run --rm alpine ping -c 8.8.8.8
 ```
 
-The `--block-private-networks` flag is independent of other network options. It can be used together with custom subnets, `--host-only` (though `--host-only` has no external interfaces to block), or any other options on `container network create`.
+By default, if no "--block-target" is provided, Traffic to private IP ranges will be blocked.
+
 
 ## Configure default network subnets
 

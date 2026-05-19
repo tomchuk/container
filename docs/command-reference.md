@@ -764,8 +764,6 @@ container network create [--internal] [--label <label> ...] [--plugin <plugin>] 
 
 *   `--internal`: Restrict to host-only network (no NAT)
 *   `--label <label>`: Set metadata for a network
-*   `--plugin <plugin>`: Set the plugin to use to create this network (default: container-network-vmnet)
-*   `--plugin-variant <variant>`: Set the variant of the network plugin to use
 *   `--subnet <subnet>`: Set the IPv4 subnet for a network (CIDR format, e.g., 192.168.100.0/24)
 *   `--subnet-v6 <subnet-v6>`: Set the IPv6 prefix for a network (CIDR format, e.g., fd00:1234::/64)
 *   `--option <key=value>`: Set a plugin-specific option; may be repeated
@@ -816,6 +814,7 @@ container network list [--format <format>] [--quiet] [--debug]
 
 *   `--format <format>`: Format of the output (values: json, table; default: table)
 *   `-q, --quiet`: Only output the network name
+*   `-o, --output <output>`: Output format (values: json, table, yaml, toml; default: table)
 
 ### `container network inspect`
 
@@ -1277,5 +1276,86 @@ container system property list
 
 # output as JSON for scripting
 container system property list --format json
+```
+
+## System Management (PF Rules)
+
+The PF (PacketFilter) commands manage block rules for container networks. These commands require administrator privileges (use sudo).
+
+### `container system pf create`
+
+Creates PF block rules for a network's traffic. By default, all traffic from the network is blocked to RFC1918 private addresses. Multiple targets can be configured for the same network, each with its own rule.
+
+**Usage**
+
+```bash
+container system pf create [--block-target <target>] [--debug] <network>
+```
+
+**Arguments**
+
+*   `<network>`: Network name (autocomplete from `container network list`)
+
+**Options**
+
+*   `--block-target <target>`: Destination target for blocked traffic (default: `rfc1918`). Must be a valid host address or an existing PF table name.
+
+**Examples**
+
+```bash
+# block all RFC1918 traffic from the network
+sudo container system pf create 192.168.64.0/24
+
+# block traffic to a specific DNS server
+sudo container system pf create 192.168.64.0/24 --block-target 1.1.1.1
+```
+
+### `container system pf delete (rm)`
+
+Deletes PF block rules for a network. Without `--block-target`, all rules for the network are removed.
+
+**Usage**
+
+```bash
+container system pf delete [--block-target <target>] [--debug] <network>
+```
+
+**Arguments**
+
+*   `<network>`: Network name
+
+**Options**
+
+*   `--block-target <target>`: Destination target to remove (if omitted, all rules for the network are removed).
+
+**Examples**
+
+```bash
+# delete all rules for a network
+sudo container system pf delete 192.168.64.0/24
+
+# delete a specific target rule
+sudo container system pf delete 192.168.64.0/24 --block-target 1.1.1.1
+```
+
+### `container system pf list (ls)`
+
+Lists all PF block rules currently in effect.
+
+**Usage**
+
+```bash
+container system pf list [--debug]
+```
+
+**Options**
+
+No options.
+
+**Examples**
+
+```bash
+# list all PF block rules
+sudo container system pf list
 ```
 
