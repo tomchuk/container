@@ -67,7 +67,16 @@ public struct PacketFilter {
 
         var lines = content.components(separatedBy: .newlines)
         if !content.contains(redirectRule) {
-            lines.insert(redirectRule, at: lines.endIndex - 1)
+            // Insert before the first block rule (or load anchor) so rdr rules stay
+            // before block rules in the anchor file, matching pf.conf statement order.
+            var insertionIndex = lines.endIndex - 1
+            if let blockIdx = lines.firstIndex(where: { $0.hasPrefix("block in quick from ") }), blockIdx < insertionIndex {
+                insertionIndex = blockIdx - 1
+            }
+            if let loadIdx = lines.firstIndex(where: { $0.hasPrefix("load anchor") }) {
+                insertionIndex = loadIdx > insertionIndex ? insertionIndex : loadIdx
+            }
+            lines.insert(redirectRule, at: insertionIndex)
         }
 
         try lines.joined(separator: "\n").write(toFile: anchorPath.string, atomically: true, encoding: .utf8)
@@ -199,9 +208,14 @@ public struct PacketFilter {
             lines.insert(rfc1918TableLine, at: tableInsertion)
         }
 
-        // Insert tag comment, then the rule before the last non-empty line
-        lines.insert(ruleTag, at: lines.endIndex - 1)
-        lines.insert(newRule, at: lines.endIndex - 1)
+        // Find where to insert: if there are already block rules, insert after
+        // the last block rule pair (idx+1). Otherwise, insert at the end.
+        var insertionIndex = lines.endIndex - 1
+        if let lastBlockLine = lines.lastIndex(where: { $0.hasPrefix("block in quick from") }) {
+            insertionIndex = lastBlockLine + 1
+        }
+        lines.insert(ruleTag, at: insertionIndex)
+        lines.insert(newRule, at: insertionIndex + 1)
 
         try lines.joined(separator: "\n").write(toFile: anchorPath.string, atomically: true, encoding: .utf8)
     }

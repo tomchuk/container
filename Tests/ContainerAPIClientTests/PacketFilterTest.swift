@@ -215,6 +215,129 @@ struct PacketFilterTest {
     }
 
     @Test
+    func testRedirectRuleInsertionBeforeBlockRules() async throws {
+        let fm = FileManager.default
+        let tempURL = try fm.url(
+            for: .itemReplacementDirectory,
+            in: .userDomainMask,
+            appropriateFor: .temporaryDirectory,
+            create: true
+        )
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+        let configPath = FilePath(tempURL.appendingPathComponent("pf.conf").path)
+        let tempPath = FilePath(tempURL.path)
+
+        let pf = PacketFilter(configPath: configPath, anchorsPath: tempPath)
+
+        // Add block rules first, then add redirect rule
+        try pf.createBlockRules(for: "testnet", subnet: "192.168.65.0/24")
+
+        let from = try! IPAddress("203.0.113.113")
+        let domain = try! DNSName("example.com")
+        let to = try! IPAddress("127.0.0.1")
+        try pf.createRedirectRule(from: from, to: to, domain: domain)
+
+        let anchorPath = tempPath.appending("com.apple.container")
+        let anchorContent = try String(contentsOfFile: anchorPath.string, encoding: .utf8)
+        let lines = anchorContent.components(separatedBy: .newlines)
+
+        // Find indices of key rule types
+        let rdrIndex = lines.firstIndex { $0.hasPrefix("rdr inet from") }
+        let blockIdx = lines.firstIndex { $0.hasPrefix("block in quick from") }
+
+        // rdr rule must come before block rule
+        #expect(rdrIndex != nil)
+        #expect(blockIdx != nil)
+        #expect(rdrIndex! < blockIdx!)
+    }
+
+    @Test
+    func testBlockRulesShiftWhenRedirectInserted() async throws {
+        let fm = FileManager.default
+        let tempURL = try fm.url(
+            for: .itemReplacementDirectory,
+            in: .userDomainMask,
+            appropriateFor: .temporaryDirectory,
+            create: true
+        )
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+        let configPath = FilePath(tempURL.appendingPathComponent("pf.conf").path)
+        let tempPath = FilePath(tempURL.path)
+
+        let pf = PacketFilter(configPath: configPath, anchorsPath: tempPath)
+
+        // Add two block rules first
+        try pf.createBlockRules(for: "net-a", subnet: "192.168.100.0/24")
+        try pf.createBlockRules(for: "net-b", subnet: "192.168.200.0/24")
+
+        let from = try! IPAddress("203.0.113.113")
+        let domain = try! DNSName("example.com")
+        let to = try! IPAddress("127.0.0.1")
+        try pf.createRedirectRule(from: from, to: to, domain: domain)
+
+        let anchorPath = tempPath.appending("com.apple.container")
+        let anchorContent = try String(contentsOfFile: anchorPath.string, encoding: .utf8)
+
+        #expect(anchorContent.contains("rdr inet from any to \(from) -> \(to) # \(domain.pqdn)"))
+        #expect(anchorContent.contains("block in quick from 192.168.100.0/24 to <rfc1918>"))
+        #expect(anchorContent.contains("block in quick from 192.168.200.0/24 to <rfc1918>"))
+
+        let lines = anchorContent.components(separatedBy: .newlines)
+        let rdrIndex = lines.firstIndex { $0.hasPrefix("rdr inet from") }
+        let netAIdx = lines.firstIndex { $0.hasPrefix("block in quick from 192.168.100.0/24") }
+        let netBIdx = lines.firstIndex { $0.hasPrefix("block in quick from 192.168.200.0/24") }
+
+        #expect(rdrIndex! < netAIdx!)
+        #expect(netAIdx! < netBIdx!)
+    }
+
+    @Test
+    func testMultipleRedirectRulesWithBlockRules() async throws {
+        let fm = FileManager.default
+        let tempURL = try fm.url(
+            for: .itemReplacementDirectory,
+            in: .userDomainMask,
+            appropriateFor: .temporaryDirectory,
+            create: true
+        )
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+        let configPath = FilePath(tempURL.appendingPathComponent("pf.conf").path)
+        let tempPath = FilePath(tempURL.path)
+
+        let pf = PacketFilter(configPath: configPath, anchorsPath: tempPath)
+
+        // Add block rules first
+        try pf.createBlockRules(for: "net-a", subnet: "192.168.100.0/24")
+
+        // Add two redirect rules
+        let from1 = try! IPAddress("203.0.113.113")
+        let domain1 = try! DNSName("aaa.com")
+        let to = try! IPAddress("127.0.0.1")
+        try pf.createRedirectRule(from: from1, to: to, domain: domain1)
+
+        let from2 = try! IPAddress("172.31.72.1")
+        let domain2 = try! DNSName("bbb.com")
+        try pf.createRedirectRule(from: from2, to: to, domain: domain2)
+
+        let anchorPath = tempPath.appending("com.apple.container")
+        let anchorContent = try String(contentsOfFile: anchorPath.string, encoding: .utf8)
+        let lines = anchorContent.components(separatedBy: .newlines)
+
+        // Count rdr and block rules
+        let rdrCount = lines.filter { $0.hasPrefix("rdr inet from") }.count
+        let blockCount = lines.filter { $0.hasPrefix("block in quick from") }.count
+
+        #expect(rdrCount == 2)
+        #expect(blockCount == 1)
+
+        // The last rdr should still be before the block rule
+        let lastRdrIdx = lines.lastIndex { $0.hasPrefix("rdr inet from") }
+        let blockIdx = lines.firstIndex { $0.hasPrefix("block in quick from") }
+
+        #expect(lastRdrIdx! < blockIdx!)
+    }
+
+    @Test
     func testMultipleTargetsPerSubnet() async throws {
         let fm = FileManager.default
         let tempURL = try fm.url(
